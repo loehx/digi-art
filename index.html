@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="author" content="Alexander Löhn" />
+    <title>Curve Fitting Neural Network</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        cursor: default;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      // Set up scene, camera, and renderer
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x000000);
+      const camera = new THREE.OrthographicCamera(
+        window.innerWidth / -2,
+        window.innerWidth / 2,
+        window.innerHeight / 2,
+        window.innerHeight / -2,
+        1,
+        1000
+      );
+      const renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // Cell size and grid setup
+      const CELL_SIZE = 10;
+      const COLS = Math.ceil(window.innerWidth / CELL_SIZE);
+      const ROWS = Math.ceil(window.innerHeight / CELL_SIZE);
+
+      // Create cells array to track state
+      const cells = [];
+      const cellMeshes = [];
+
+      // Create cell geometry and materials
+      const cellGeometry = new THREE.PlaneGeometry(CELL_SIZE, CELL_SIZE);
+      const activeMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        side: THREE.DoubleSide,
+      });
+      const inactiveMaterial = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        side: THREE.DoubleSide,
+      });
+
+      // Initialize grid
+      for (let row = 0; row < ROWS; row++) {
+        cells[row] = [];
+        cellMeshes[row] = [];
+        for (let col = 0; col < COLS; col++) {
+          cells[row][col] = false;
+          const mesh = new THREE.Mesh(cellGeometry, inactiveMaterial);
+          mesh.position.set(
+            col * CELL_SIZE - window.innerWidth / 2 + CELL_SIZE / 2,
+            row * CELL_SIZE - window.innerHeight / 2 + CELL_SIZE / 2,
+            0
+          );
+          // Start rotated 90 degrees around X axis so cells are edge-on
+          mesh.rotation.x = Math.PI / 2;
+          cellMeshes[row][col] = mesh;
+          scene.add(mesh);
+        }
+      }
+
+      // Toggle cell state with animation
+      // Animation timing constants
+      const TOGGLE_DURATION = 500; // milliseconds
+      const ACTIVE_DURATION = 50; // milliseconds
+      const INACTIVE_DURATION = 50; // milliseconds
+
+      function toggleCell(row, col) {
+        if (row >= 0 && row < ROWS && col >= 0 && col < COLS) {
+          cells[row][col] = !cells[row][col];
+          const mesh = cellMeshes[row][col];
+          const targetRotation = cells[row][col] ? 0 : Math.PI / 2;
+
+          // Animate the rotation
+          const startRotation = mesh.rotation.x;
+          const startTime = Date.now();
+
+          function animateRotation() {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / TOGGLE_DURATION, 1);
+
+            // Use easeOutQuad easing
+            const eased = 1 - (1 - progress) * (1 - progress);
+
+            mesh.rotation.x =
+              startRotation + (targetRotation - startRotation) * eased;
+            mesh.material = cells[row][col] ? activeMaterial : inactiveMaterial;
+
+            if (progress < 1) {
+              requestAnimationFrame(animateRotation);
+            }
+          }
+
+          animateRotation();
+
+          // Automatically deactivate after ACTIVE_DURATION
+          if (cells[row][col]) {
+            setTimeout(() => {
+              cells[row][col] = false;
+              const mesh = cellMeshes[row][col];
+              const startRotation = mesh.rotation.x;
+              const startTime = Date.now();
+
+              function animateDeactivation() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / TOGGLE_DURATION, 1);
+                const eased = 1 - (1 - progress) * (1 - progress);
+
+                mesh.rotation.x =
+                  startRotation + (Math.PI / 2 - startRotation) * eased;
+                mesh.material = inactiveMaterial;
+
+                if (progress < 1) {
+                  requestAnimationFrame(animateDeactivation);
+                }
+              }
+
+              animateDeactivation();
+            }, ACTIVE_DURATION);
+          }
+        }
+      }
+
+      // Update cell states based on neighbors
+      function updateCells() {
+        const newStates = cells.map((row) => [...row]);
+
+        // Calculate new states based on neighbors
+        for (let row = 0; row < ROWS; row++) {
+          for (let col = 0; col < COLS; col++) {
+            let activeNeighbors = 0;
+
+            // Check all 8 neighbors
+            for (let i = -1; i <= 1; i++) {
+              for (let j = -1; j <= 1; j++) {
+                if (i === 0 && j === 0) continue;
+                const newRow = row + i;
+                const newCol = col + j;
+                if (
+                  newRow >= 0 &&
+                  newRow < ROWS &&
+                  newCol >= 0 &&
+                  newCol < COLS &&
+                  cells[newRow][newCol]
+                ) {
+                  activeNeighbors++;
+                }
+              }
+            }
+
+            // Update state based on neighbors
+            newStates[row][col] = activeNeighbors > 0;
+          }
+        }
+
+        // Apply new states using toggleCell
+        for (let row = 0; row < ROWS; row++) {
+          for (let col = 0; col < COLS; col++) {
+            if (cells[row][col] !== newStates[row][col]) {
+              toggleCell(row, col);
+            }
+          }
+        }
+      }
+
+      // Handle mouse clicks
+      const raycaster = new THREE.Raycaster();
+      const mouse = new THREE.Vector2();
+
+      window.addEventListener("click", handleInteraction);
+      window.addEventListener("touchstart", (event) => {
+        event.preventDefault(); // Prevent default touch behavior
+        handleInteraction(event.touches[0]);
+      });
+
+      function handleInteraction(event) {
+        // Handle both click and touch events
+        const clientX =
+          event.clientX ||
+          event.x ||
+          (event.touches && event.touches[0].clientX);
+        const clientY =
+          event.clientY ||
+          event.y ||
+          (event.touches && event.touches[0].clientY);
+
+        if (typeof clientX !== "number" || typeof clientY !== "number") {
+          console.warn("Invalid coordinates from event:", event);
+          return;
+        }
+
+        mouse.x = (clientX / window.innerWidth) * 2 - 1;
+        mouse.y = (clientY / window.innerHeight) * 2 - 1; // Removed the negative sign
+
+        raycaster.setFromCamera(mouse, camera);
+
+        // Get all meshes from the scene that are cell meshes
+        const cellMeshesFlat = cellMeshes.flat();
+        const intersects = raycaster.intersectObjects(cellMeshesFlat, false);
+
+        if (intersects.length > 0) {
+          const col = Math.floor(
+            (intersects[0].object.position.x + window.innerWidth / 2) /
+              CELL_SIZE
+          );
+          const row = Math.floor(
+            (-intersects[0].object.position.y + window.innerHeight / 2) / // Added negative sign
+              CELL_SIZE
+          );
+          console.log("Toggling cell at", { row, col, event: event.type });
+          toggleCell(row, col);
+        } else {
+          // Create a trail of active cells when no direct intersection
+          const col = Math.floor((clientX / window.innerWidth) * COLS);
+          const row = Math.floor(
+            ((window.innerHeight - clientY) / window.innerHeight) * ROWS
+          ); // Inverted Y coordinate
+
+          // Activate cells in a small radius around the click
+          const radius = 2;
+          for (let i = -radius; i <= radius; i++) {
+            for (let j = -radius; j <= radius; j++) {
+              const newRow = row + i;
+              const newCol = col + j;
+              if (
+                newRow >= 0 &&
+                newRow < ROWS &&
+                newCol >= 0 &&
+                newCol < COLS
+              ) {
+                toggleCell(newRow, newCol);
+              }
+            }
+          }
+        }
+      }
+
+      // Animation loop
+      camera.position.z = 100;
+
+      function animate() {
+        requestAnimationFrame(animate);
+        updateCells();
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      // Handle window resize
+      window.addEventListener("resize", () => {
+        camera.left = window.innerWidth / -2;
+        camera.right = window.innerWidth / 2;
+        camera.top = window.innerHeight / 2;
+        camera.bottom = window.innerHeight / -2;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    </script>
+    <h1>Curve Fitting Neural Network</h1>
+    <style>
+      h1 {
+        position: absolute;
+        top: 5%;
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: "Helvetica Neue", Arial, sans-serif;
+        font-size: 24px;
+        color: rgba(255, 255, 255, 0.8);
+        text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.4);
+        margin: 0;
+        padding: 10px 20px;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 5px;
+        z-index: 100;
+        width: 100%;
+        text-align: center;
+      }
+    </style>
+    <p class="copyright">
+      by Alexander L&ouml;hn - 2024 -
+      <a href="https://loehx.com/">loehx.com</a>
+    </p>
+    <style>
+      .copyright {
+        position: absolute;
+        bottom: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: "Helvetica Neue", Arial, sans-serif;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.4);
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+        transition: all 0.3s ease;
+        text-align: center;
+        width: 100%;
+      }
+
+      .copyright a {
+        color: inherit;
+        text-decoration: none;
+        border-bottom: 1px dotted rgba(255, 255, 255, 0.4);
+      }
+
+      .copyright a:hover {
+        border-bottom-color: rgba(255, 255, 255, 0.9);
+      }
+    </style>
+    <div class="error-rate">Error: 0.00000</div>
+    <style>
+      .error-rate {
+        color: white;
+        position: absolute;
+        bottom: 10%;
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: "Helvetica Neue", Arial, sans-serif;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.6);
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+        transition: all 0.3s ease;
+      }
+      .error-rate.converged {
+        color: rgba(0, 255, 0, 0.9);
+        text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.5);
+      }
+    </style>
+  </body>
+</html>
