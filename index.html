@@ -79,6 +79,38 @@
       const ACTIVE_DURATION = 50; // milliseconds
       const INACTIVE_DURATION = 50; // milliseconds
 
+      function toggleCellRotation(mesh, targetRotation) {
+        const startRotation = mesh.rotation.x;
+        const startTime = Date.now();
+
+        function animateRotation() {
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(elapsed / TOGGLE_DURATION, 1);
+
+          // Use smoother easing with cubic bezier
+          const eased =
+            progress < 0.5
+              ? 4 * progress * progress * progress
+              : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+          // Update rotation smoothly
+          mesh.rotation.x =
+            startRotation + (targetRotation - startRotation) * eased;
+
+          // Only change material at end of animation
+          if (progress === 1) {
+            mesh.material =
+              mesh.rotation.x === 0 ? activeMaterial : inactiveMaterial;
+          }
+
+          if (progress < 1) {
+            requestAnimationFrame(animateRotation);
+          }
+        }
+
+        animateRotation();
+      }
+
       function toggleCell(row, col) {
         if (row >= 0 && row < ROWS && col >= 0 && col < COLS) {
           cells[row][col] = !cells[row][col];
@@ -86,50 +118,14 @@
           const targetRotation = cells[row][col] ? 0 : Math.PI / 2;
 
           // Animate the rotation
-          const startRotation = mesh.rotation.x;
-          const startTime = Date.now();
-
-          function animateRotation() {
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / TOGGLE_DURATION, 1);
-
-            // Use easeOutQuad easing
-            const eased = 1 - (1 - progress) * (1 - progress);
-
-            mesh.rotation.x =
-              startRotation + (targetRotation - startRotation) * eased;
-            mesh.material = cells[row][col] ? activeMaterial : inactiveMaterial;
-
-            if (progress < 1) {
-              requestAnimationFrame(animateRotation);
-            }
-          }
-
-          animateRotation();
+          toggleCellRotation(mesh, targetRotation);
 
           // Automatically deactivate after ACTIVE_DURATION
           if (cells[row][col]) {
             setTimeout(() => {
               cells[row][col] = false;
               const mesh = cellMeshes[row][col];
-              const startRotation = mesh.rotation.x;
-              const startTime = Date.now();
-
-              function animateDeactivation() {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / TOGGLE_DURATION, 1);
-                const eased = 1 - (1 - progress) * (1 - progress);
-
-                mesh.rotation.x =
-                  startRotation + (Math.PI / 2 - startRotation) * eased;
-                mesh.material = inactiveMaterial;
-
-                if (progress < 1) {
-                  requestAnimationFrame(animateDeactivation);
-                }
-              }
-
-              animateDeactivation();
+              toggleCellRotation(mesh, Math.PI / 2);
             }, ACTIVE_DURATION);
           }
         }
