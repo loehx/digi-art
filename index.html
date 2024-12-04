@@ -177,8 +177,13 @@
       const raycaster = new THREE.Raycaster();
       const mouse = new THREE.Vector2();
 
-      window.addEventListener("click", handleInteraction);
-      window.addEventListener("touchstart", (event) => {
+      window.addEventListener("mousemove", (event) => {
+        if (event.buttons === 1) {
+          // Only handle when left mouse button is pressed
+          handleInteraction(event);
+        }
+      });
+      window.addEventListener("touchmove", (event) => {
         event.preventDefault(); // Prevent default touch behavior
         handleInteraction(event.touches[0]);
       });
