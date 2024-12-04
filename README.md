@@ -13,7 +13,7 @@ An interactive web-based cellular automaton visualization created with Three.js.
 
 ## Live Demo
 
-Visit [loehx.com](https://loehx.com) to see it in action.
+Visit [loehx.github.io/digi-art](https://loehx.github.io/digi-art) to see it in action.
 
 ## Technical Details
 
